@@ -343,7 +343,7 @@
       document.getElementById('weather').innerHTML = weatherHtml;
     }
 
-    async function main() {
+async function main() {
       const container = document.getElementById('container');
       container.innerHTML = '<div class="loading"></div>';
 
@@ -353,8 +353,8 @@
       const workStopId = '46D1A9FD1F84CA5C';
       const homeStopId = '52A8DA8958AFCCA6';
       const home61X_1_StopId = '661FEE32A0D73EB0';
-      const home61X_2_StopId = '52A8DA8958AFCCA6';
-      const taiYauStopId = '49FAC55AF9CB8272'; // New Stop
+      const home61X_2_StopId = '49FAC55AF9CB8272'; // New Stop
+      const home61X_3_StopId = '52A8DA8958AFCCA6';
 
       const workPromise = getETAHtml(
         `https://data.etabus.gov.hk/v1/transport/kmb/eta/${workStopId}/258P/1`,
@@ -372,18 +372,18 @@
         home61X_1_StopId
       );
       const home61X_2_Promise = getETAHtml(
-        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${home61X_2_StopId}/61X/1`,
+        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${home61X_2_StopId}/61X/1`, // Fixed variable here
         '61X 回家方向 (站點2)',
         home61X_2_StopId
-      );
-      const taiYauPromise = getETAHtml(
-        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${taiYauStopId}/61X/1`,
-        '61X 新蒲崗大有街',
-        taiYauStopId
+      );    
+      const home61X_3_Promise = getETAHtml(
+        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${home61X_3_StopId}/61X/1`, // Fixed variable here
+        '61X 回家方向 (站點3)',
+        home61X_3_StopId
       );
 
       const results = await Promise.allSettled([
-        workPromise, homePromise, home61X_1_Promise, home61X_2_Promise, taiYauPromise
+        workPromise, homePromise, home61X_1_Promise, home61X_2_Promise, home61X_3_Promise
       ]);
 
       const htmls = results.map(result => result.status === 'fulfilled' ? result.value : '<div class="no-service">載入失敗，請稍後再試</div>');
