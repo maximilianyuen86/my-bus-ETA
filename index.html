@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>258P + 61X 到站時間</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#121212">
+  
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #121212;
+      color: #e0e0e0;
+      text-align: center;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .header-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      margin-top: 10px;
+    }
+    h2 {
+      color: #bb86fc;
+      margin: 0 10px;
+      font-size: 1.5em;
+    }
+    .refresh-button {
+      background: #1e1e1e;
+      color: #bb86fc;
+      border: 1px solid #bb86fc;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 0.9em;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      transition: background 0.2s;
+    }
+    .refresh-button:hover, .refresh-button:active {
+      background: #2d2d2d;
+    }
+    .refresh-button svg {
+      margin-right: 6px;
+    }
+    .refresh-button.loading {
+      opacity: 0.7;
+      cursor: default;
+    }
+    .bus-direction {
+      margin: 10px auto;
+      max-width: 80%;
+      width: 80%;
+      background: #1e1e1e;
+      border-radius: 12px;
+      padding: 12px 16px;
+      box-sizing: border-box;
+      text-align: left;
+    }
+    .bus-title {
+      font-size: 1.1em;
+      font-weight: bold;
+      margin-bottom: 4px;
+      color: #bb86fc;
+    }
+    .bus-stop-info {
+      font-size: 0.93em;
+      color: #bbb;
+      margin-bottom: 8px;
+      margin-top: 0;
+    }
+    .eta-item {
+      margin: 6px 0;
+      font-size: 1em;
+      padding: 4px 8px;
+      border-radius: 6px;
+    }
+    .eta-item:first-child {
+      font-weight: bold;
+      font-size: 1.1em;
+    }
+    .eta-item.urgent {
+      background: rgba(255, 100, 100, 0.1);
+      color: #ff9999;
+    }
+    .eta-item.warning {
+      background: rgba(255, 165, 0, 0.1);
+      color: #ffc266;
+    }
+    .eta-item.normal {
+      background: rgba(100, 255, 100, 0.1);
+      color: #99ff99;
+    }
+    .eta-time {
+      color: #03dac6;
+    }
+    .eta-diff {
+      color: #ffb74d;
+      margin-left: 6px;
+    }
+    .no-service {
+      color: #888;
+      text-align: left;
+    }
+    .refresh-info {
+      color: #888;
+      margin: 10px 0 0 0;
+      font-size: 0.92em;
+    }
+    #container {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #weather {
+      margin: 8px auto;
+      max-width: 80%;
+      width: 80%;
+      background: #1e1e1e;
+      border-radius: 12px;
+      padding: 12px 16px;
+      box-sizing: border-box;
+      text-align: left;
+      font-size: 0.98em;
+      line-height: 1.4;
+    }
+    .weather-warning {
+      font-size: 1.1em;
+      color: #ffb74d;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+    }
+    .weather-warning svg {
+      margin-right: 6px;
+    }
+    .weather-separator {
+      height: 1px;
+      background: #444;
+      margin: 8px 0;
+    }
+    .weather-rain {
+      margin: 0 0 8px 0;
+      display: flex;
+      justify-content: center;
+      height: 36px;
+    }
+    .weather-rain svg {
+      width: 36px;
+      height: 36px;
+      stroke: white;
+    }
+    .bus-alert {
+      font-size: 0.95em;
+      color: #ffb74d;
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+    }
+    .bus-alert svg {
+      margin-right: 6px;
+    }
+    .bus-all-clear {
+      font-size: 0.95em;
+      color: #99ff99;
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+    }
+    .bus-all-clear svg {
+      margin-right: 6px;
+    }
+    @media (max-width: 700px) {
+      .bus-direction, #weather {
+        max-width: 90%;
+        width: 90%;
+        padding: 10px 12px;
+      }
+    }
+    .loading {
+      display: inline-block;
+      border: 4px solid rgba(0, 0, 0, 0.1);
+      border-left-color: #bb86fc;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      animation: spin 1s linear infinite;
+      margin-top: 20px;
+    }
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header-container">
+    <h2>258P + 61X 到站時間</h2>
+    <button id="refreshBtn" class="refresh-button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#bb86fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M23 4v6h-6"></path>
+        <path d="M1 20v-6h6"></path>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+      </svg>
+      刷新
+    </button>
+  </div>
+  <div id="weather">天氣載入中…</div>
+  <div id="container"></div>
+  <div class="refresh-info">每分鐘自動更新</div>
+  <script>
+    async function fetchData(url) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return await response.json();
+      } catch (error) {
+        console.error(`Fetch error for ${url}:`, error);
+        return null;
+      }
+    }
+
+    async function getStopInfo(stopId) {
+      const data = await fetchData(`https://data.etabus.gov.hk/v1/transport/kmb/stop/${stopId}`);
+      if (data && data.data) {
+        return { name: data.data.name_tc, code: data.data.stop };
+      }
+      return { name: '未知站名', code: stopId };
+    }
+
+    async function getETAHtml(url, title, stopId) {
+      let stopInfoHtml = '';
+      const stopInfo = await getStopInfo(stopId);
+      stopInfoHtml = `<div class="bus-stop-info">${stopInfo.name}（${stopInfo.code}）</div>`;
+
+      let html = `<div class="bus-direction"><div class="bus-title">${title}</div>${stopInfoHtml}`;
+      let alertHtml = '';
+      const data = await fetchData(url);
+      let items = '';
+      if (data && data.data && data.data.length > 0) {
+        let count = 0;
+        for (let i = 0; i < data.data.length; i++) {
+          const eta = data.data[i].eta;
+          if (eta) {
+            const etaTime = new Date(eta);
+            const now = new Date();
+            const diffMinutes = Math.round((etaTime - now) / (60 * 1000));
+            const etaStr = etaTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            let urgencyClass = '';
+            if (diffMinutes <= 2) urgencyClass = 'urgent';
+            else if (diffMinutes <= 5) urgencyClass = 'warning';
+            else urgencyClass = 'normal';
+            items += `<div class="eta-item ${urgencyClass}">
+              <span class="eta-time">${etaStr}</span>
+              <span class="eta-diff">（${diffMinutes >= 0 ? diffMinutes + '分鐘後' : '已過' + (-diffMinutes) + '分鐘'}）</span>
+            </div>`;
+            count++;
+            if (count >= 3) break;
+          }
+        }
+      }
+      if (!items) {
+        items = `<div class="no-service">目前沒有服務</div>`;
+      }
+      let alertMsg = '';
+      if (data && data.data && data.data.length > 0 && data.data[0].rmk_tc) {
+        alertMsg = data.data[0].rmk_tc;
+      }
+      if (alertMsg) {
+        alertHtml = `<div class="bus-alert">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffb74d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12" y2="16"></line>
+          </svg>
+          ${alertMsg}
+        </div>`;
+      } else {
+        alertHtml = `<div class="bus-all-clear">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#99ff99" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          一切正常
+        </div>`;
+      }
+      html += items + alertHtml + '</div>';
+      return html;
+    }
+
+    async function updateWeather() {
+      const data = await fetchData('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=fnd&lang=tc');
+      let generalSituation = data ? data.generalSituation || '' : '';
+      let forecastWeather = '';
+      let weatherWarning = '';
+      let rainIcon = '';
+      if (data && data.weatherForecast && data.weatherForecast.length > 0) {
+        forecastWeather = data.weatherForecast[0].forecastWeather || '';
+        const hasRain = ['雨', '驟雨', '暴雨', '雷暴', '台風'].some(keyword => forecastWeather.includes(keyword));
+        if (hasRain) {
+          rainIcon = `<div class="weather-rain">
+            <svg viewBox="0 0 330 330" xmlns="http://www.w3.org/2000/svg" width="36" height="36">
+              <g>
+                <path d="M315,260c-8.284,0-15,6.716-15,15v20c0,8.284,6.716,15,15,15c8.284,0,15-6.716,15-15v-20 C330,266.716,323.284,260,315,260z" fill="white"></path>
+                <path d="M15,260c-8.284,0-15,6.716-15,15v20c0,8.284,6.716,15,15,15s15-6.716,15-15v-20 C30,266.716,23.284,260,15,260z" fill="white"></path>
+                <path d="M240,280c-8.284,0-15,6.716-15,15v20c0,8.284,6.716,15,15,15c8.284,0,15-6.716,15-15v-20 C255,286.716,248.284,280,240,280z" fill="white"></path>
+                <path d="M90,280c-8.284,0-15,6.716-15,15v20c0,8.284,6.716,15,15,15s15-6.716,15-15v-20 C105,286.716,98.284,280,90,280z" fill="white"></path>
+                <path d="M165,260c-8.284,0-15,6.716-15,15v20c0,8.284,6.716,15,15,15c8.284,0,15-6.716,15-15v-20 C180,266.716,173.284,260,165,260z" fill="white"></path>
+                <path d="M330,144.96c0-46.869-38.131-85-85-85h-1.668C229.161,24.135,194.356,0,155,0 c-50.928,0-92.626,40.282-94.902,90.658C26.17,95.481,0,124.721,0,159.96c0,38.598,31.402,70,70,70h175 C291.869,229.96,330,191.829,330,144.96z M30,159.96c0-22.056,17.944-40,40-40h5c8.284,0,15-6.716,15-15V95 c0-35.841,29.159-65,65-65c29.663,0,55.546,20.029,62.943,48.706c1.708,6.625,7.683,11.254,14.524,11.254H245 c30.327,0,55,24.673,55,55c0,30.327-24.673,55-55,55H70C47.944,199.96,30,182.016,30,159.96z" fill="white"></path>
+              </g>
+            </svg>
+          </div>`;
+        }
+      }
+      if (data && data.warningMessage && data.warningMessage.length > 0) {
+        weatherWarning = data.warningMessage.map(msg => msg[Object.keys(msg)[0]]).join('；');
+      }
+      let weatherHtml = '';
+      if (weatherWarning) {
+        weatherHtml += `<div class="weather-warning">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffb74d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12" y2="17"></line>
+          </svg>
+          ${weatherWarning}
+        </div>`;
+      }
+      weatherHtml += `${rainIcon}
+        <div>${generalSituation}</div>
+        <div class="weather-separator"></div>
+        <div>今日天氣：${forecastWeather}</div>`;
+      document.getElementById('weather').innerHTML = weatherHtml;
+    }
+
+    async function main() {
+      const container = document.getElementById('container');
+      container.innerHTML = '<div class="loading"></div>';
+
+      const now = new Date();
+      const isMorning = now.getHours() < 12;
+
+      const workStopId = '46D1A9FD1F84CA5C';
+      const homeStopId = '52A8DA8958AFCCA6';
+      const home61X_1_StopId = '661FEE32A0D73EB0';
+      const home61X_2_StopId = '52A8DA8958AFCCA6';
+      const taiYauStopId = '49FAC55AF9CB8272'; // New Stop
+
+      const workPromise = getETAHtml(
+        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${workStopId}/258P/1`,
+        '258P 上班方向',
+        workStopId
+      );
+      const homePromise = getETAHtml(
+        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${homeStopId}/258P/1`,
+        '258P 回家方向',
+        homeStopId
+      );
+      const home61X_1_Promise = getETAHtml(
+        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${home61X_1_StopId}/61X/1`,
+        '61X 回家方向 (站點1)',
+        home61X_1_StopId
+      );
+      const home61X_2_Promise = getETAHtml(
+        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${home61X_2_StopId}/61X/1`,
+        '61X 回家方向 (站點2)',
+        home61X_2_StopId
+      );
+      const taiYauPromise = getETAHtml(
+        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${taiYauStopId}/61X/1`,
+        '61X 新蒲崗大有街',
+        taiYauStopId
+      );
+
+      const results = await Promise.allSettled([
+        workPromise, homePromise, home61X_1_Promise, home61X_2_Promise, taiYauPromise
+      ]);
+
+      const htmls = results.map(result => result.status === 'fulfilled' ? result.value : '<div class="no-service">載入失敗，請稍後再試</div>');
+
+      if (isMorning) {
+        // Morning: Work first, then Home, then Tai Yau
+        container.innerHTML = htmls[0] + htmls[1] + htmls[2] + htmls[3] + htmls[4];
+      } else {
+        // Afternoon: Home routes first, then Tai Yau, then Work
+        container.innerHTML = htmls[1] + htmls[2] + htmls[3] + htmls[4] + htmls[0];
+      }
+    }
+
+    async function updateAll() {
+      const refreshBtn = document.getElementById('refreshBtn');
+      refreshBtn.disabled = true;
+      refreshBtn.classList.add('loading');
+      refreshBtn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#bb86fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="16" y1="12" x2="12" y2="8"></line>
+          <line x1="8" y1="12" x2="12" y2="16"></line>
+        </svg>
+        刷新中...
+      `;
+
+      try {
+        await Promise.all([updateWeather(), main()]);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.classList.remove('loading');
+        refreshBtn.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#bb86fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 4v6h-6"></path>
+            <path d="M1 20v-6h6"></path>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+          刷新
+        `;
+      }
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', updateAll);
+    updateAll();
+    setInterval(updateAll, 60 * 1000);
+  </script>
+</body>
+</html>
