@@ -2,10 +2,11 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>258P + 61X 到站時間</title>
+  <title>258P + 61X + 63X + 68A 到站時間</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#121212">
+  <link rel="icon" href="https://www.kmb.hk/favicon.ico" type="image/x-icon">
   
   <style>
     body {
@@ -52,6 +53,13 @@
     .refresh-button.loading {
       opacity: 0.7;
       cursor: default;
+      width: auto;
+      height: auto;
+      border: 1px solid #bb86fc;
+      border-radius: 8px;
+    }
+    .refresh-button.loading svg {
+      animation: spin 1s linear infinite;
     }
     .bus-direction {
       margin: 10px auto;
@@ -107,6 +115,30 @@
     .no-service {
       color: #888;
       text-align: left;
+    }
+    #lastUpdated {
+      color: #666;
+      font-size: 0.8em;
+      margin: 4px 0 0 0;
+      min-height: 1.2em;
+    }
+    .eta-deviation {
+      margin-left: 8px;
+      font-size: 0.85em;
+      font-weight: normal;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .eta-deviation.delayed {
+      color: #ff9999;
+      background: rgba(255, 100, 100, 0.15);
+    }
+    .eta-deviation.early {
+      color: #99ff99;
+      background: rgba(100, 255, 100, 0.15);
+    }
+    .eta-deviation.ontime {
+      color: #888;
     }
     .refresh-info {
       color: #888;
@@ -203,7 +235,7 @@
 </head>
 <body>
   <div class="header-container">
-    <h2>258P + 61X 到站時間</h2>
+    <h2>258P + 61X + 63X + 68A 到站時間</h2>
     <button id="refreshBtn" class="refresh-button">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#bb86fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M23 4v6h-6"></path>
@@ -213,10 +245,75 @@
       刷新
     </button>
   </div>
+  <div id="lastUpdated"></div>
   <div id="weather">天氣載入中…</div>
   <div id="container"></div>
   <div class="refresh-info">每分鐘自動更新</div>
   <script>
+    // ETA Deviation Tracker
+    const etaTracker = {};
+
+    function matchAndTrackETAs(key, etaRecords) {
+      const now = Date.now();
+      if (!etaTracker[key]) {
+        etaTracker[key] = [];
+      }
+      const tracked = etaTracker[key];
+      const activeTracked = tracked.filter(t => t.status === 'active');
+      const used = new Array(activeTracked.length).fill(false);
+      const matchedInfo = new Array(etaRecords.length).fill(null);
+
+      for (let i = 0; i < etaRecords.length; i++) {
+        if (!etaRecords[i].eta) {
+          matchedInfo[i] = { deviation: null, isNew: false };
+          continue;
+        }
+        const newTime = new Date(etaRecords[i].eta).getTime();
+        let bestIdx = -1;
+        let bestDiff = Infinity;
+
+        for (let j = 0; j < activeTracked.length; j++) {
+          if (used[j]) continue;
+          const diff = Math.abs(newTime - activeTracked[j].originalTime.getTime());
+          if (diff < bestDiff) {
+            bestDiff = diff;
+            bestIdx = j;
+          }
+        }
+
+        // Threshold: 3 minutes (180000 ms)
+        if (bestIdx >= 0 && bestDiff < 180000) {
+          used[bestIdx] = true;
+          const track = activeTracked[bestIdx];
+          track.currentTime = new Date(etaRecords[i].eta);
+
+          const originalRemaining = (track.originalTime.getTime() - track.originalFetchTime) / 60000;
+          const currentRemaining = (newTime - now) / 60000;
+          const deviation = Math.round(currentRemaining - originalRemaining);
+
+          matchedInfo[i] = { deviation, originalTime: track.originalTime, isNew: false };
+        } else {
+          // New bus — add to tracker
+          tracked.push({
+            originalTime: new Date(etaRecords[i].eta),
+            currentTime: new Date(etaRecords[i].eta),
+            originalFetchTime: now,
+            status: 'active'
+          });
+          matchedInfo[i] = { deviation: null, isNew: true };
+        }
+      }
+
+      // Mark unmatched active tracks as departed
+      for (let j = 0; j < activeTracked.length; j++) {
+        if (!used[j]) {
+          activeTracked[j].status = 'departed';
+        }
+      }
+
+      return matchedInfo;
+    }
+
     async function fetchData(url) {
       try {
         const response = await fetch(url);
@@ -238,7 +335,7 @@
       return { name: '未知站名', code: stopId };
     }
 
-    async function getETAHtml(url, title, stopId) {
+    async function getETAHtml(url, title, stopId, routeKey) {
       let stopInfoHtml = '';
       const stopInfo = await getStopInfo(stopId);
       stopInfoHtml = `<div class="bus-stop-info">${stopInfo.name}（${stopInfo.code}）</div>`;
@@ -246,6 +343,13 @@
       let html = `<div class="bus-direction"><div class="bus-title">${title}</div>${stopInfoHtml}`;
       let alertHtml = '';
       const data = await fetchData(url);
+
+      // Track ETAs and get deviation info
+      let matchInfos = [];
+      if (routeKey && data && data.data && data.data.length > 0) {
+        matchInfos = matchAndTrackETAs(routeKey, data.data);
+      }
+
       let items = '';
       if (data && data.data && data.data.length > 0) {
         let count = 0;
@@ -260,9 +364,23 @@
             if (diffMinutes <= 2) urgencyClass = 'urgent';
             else if (diffMinutes <= 5) urgencyClass = 'warning';
             else urgencyClass = 'normal';
+
+            // Deviation badge
+            let devHtml = '';
+            const info = matchInfos[i];
+            if (info && info.deviation !== null) {
+              if (info.deviation > 0) {
+                devHtml = `<span class="eta-deviation delayed">+${info.deviation}分</span>`;
+              } else if (info.deviation < 0) {
+                devHtml = `<span class="eta-deviation early">${info.deviation}分</span>`;
+              } else {
+                devHtml = `<span class="eta-deviation ontime">準時</span>`;
+              }
+            }
+
             items += `<div class="eta-item ${urgencyClass}">
               <span class="eta-time">${etaStr}</span>
-              <span class="eta-diff">（${diffMinutes >= 0 ? diffMinutes + '分鐘後' : '已過' + (-diffMinutes) + '分鐘'}）</span>
+              <span class="eta-diff">（${diffMinutes >= 0 ? diffMinutes + '分鐘後' : '已過' + (-diffMinutes) + '分鐘'}）</span>${devHtml}
             </div>`;
             count++;
             if (count >= 3) break;
@@ -355,80 +473,91 @@ async function main() {
       const home61X_1_StopId = '661FEE32A0D73EB0';
       const home61X_2_StopId = '49FAC55AF9CB8272'; // New Stop
       const home61X_3_StopId = '52A8DA8958AFCCA6';
+      const bbi_B1_StopId = '872110C8ADA14DA1'; // TUEN MUN ROAD BBI (B1) (TM107)
 
       const workPromise = getETAHtml(
         `https://data.etabus.gov.hk/v1/transport/kmb/eta/${workStopId}/258P/1`,
         '258P 上班方向',
-        workStopId
+        workStopId,
+        `${workStopId}_258P`
       );
       const homePromise = getETAHtml(
         `https://data.etabus.gov.hk/v1/transport/kmb/eta/${homeStopId}/258P/1`,
         '258P 回家方向',
-        homeStopId
+        homeStopId,
+        `${homeStopId}_258P`
       );
       const home61X_1_Promise = getETAHtml(
         `https://data.etabus.gov.hk/v1/transport/kmb/eta/${home61X_1_StopId}/61X/1`,
         '61X 回家方向 (站點1)',
-        home61X_1_StopId
+        home61X_1_StopId,
+        `${home61X_1_StopId}_61X`
       );
       const home61X_2_Promise = getETAHtml(
-        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${home61X_2_StopId}/61X/1`, // Fixed variable here
+        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${home61X_2_StopId}/61X/1`,
         '61X 回家方向 (站點2)',
-        home61X_2_StopId
+        home61X_2_StopId,
+        `${home61X_2_StopId}_61X`
       );    
       const home61X_3_Promise = getETAHtml(
-        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${home61X_3_StopId}/61X/1`, // Fixed variable here
+        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${home61X_3_StopId}/61X/1`,
         '61X 回家方向 (站點3)',
-        home61X_3_StopId
+        home61X_3_StopId,
+        `${home61X_3_StopId}_61X`
+      );
+
+      const bbi63X_Promise = getETAHtml(
+        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${bbi_B1_StopId}/63X/1`,
+        '63X 屯門公路轉車站 (B1)',
+        bbi_B1_StopId,
+        `${bbi_B1_StopId}_63X`
+      );
+      const bbi68A_Promise = getETAHtml(
+        `https://data.etabus.gov.hk/v1/transport/kmb/eta/${bbi_B1_StopId}/68A/1`,
+        '68A 屯門公路轉車站 (B1)',
+        bbi_B1_StopId,
+        `${bbi_B1_StopId}_68A`
       );
 
       const results = await Promise.allSettled([
-        workPromise, homePromise, home61X_1_Promise, home61X_2_Promise, home61X_3_Promise
+        workPromise, homePromise, home61X_1_Promise, home61X_2_Promise, home61X_3_Promise, bbi63X_Promise, bbi68A_Promise
       ]);
 
       const htmls = results.map(result => result.status === 'fulfilled' ? result.value : '<div class="no-service">載入失敗，請稍後再試</div>');
 
       if (isMorning) {
-        // Morning: Work first, then Home, then Tai Yau
-        container.innerHTML = htmls[0] + htmls[1] + htmls[2] + htmls[3] + htmls[4];
+        // Morning: Work first, then Home, then BBI routes
+        container.innerHTML = htmls[0] + htmls[1] + htmls[2] + htmls[3] + htmls[4] + htmls[5] + htmls[6];
       } else {
-        // Afternoon: Home routes first, then Tai Yau, then Work
-        container.innerHTML = htmls[1] + htmls[2] + htmls[3] + htmls[4] + htmls[0];
+        // Afternoon: Home routes first, then BBI routes, then Work
+        container.innerHTML = htmls[1] + htmls[2] + htmls[3] + htmls[4] + htmls[5] + htmls[6] + htmls[0];
       }
     }
 
-    async function updateAll() {
+    function updateLastUpdated() {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      document.getElementById('lastUpdated').textContent = `最後更新：${timeStr}`;
+    }
+
+    async function updateAll(manual = false) {
       const refreshBtn = document.getElementById('refreshBtn');
       refreshBtn.disabled = true;
       refreshBtn.classList.add('loading');
-      refreshBtn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#bb86fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="16" y1="12" x2="12" y2="8"></line>
-          <line x1="8" y1="12" x2="12" y2="16"></line>
-        </svg>
-        刷新中...
-      `;
 
       try {
         await Promise.all([updateWeather(), main()]);
+        updateLastUpdated();
       } catch (error) {
         console.error(error);
       } finally {
         refreshBtn.disabled = false;
         refreshBtn.classList.remove('loading');
-        refreshBtn.innerHTML = `
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#bb86fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M23 4v6h-6"></path>
-            <path d="M1 20v-6h6"></path>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-          </svg>
-          刷新
-        `;
+        if (manual && navigator.vibrate) navigator.vibrate(20);
       }
     }
 
-    document.getElementById('refreshBtn').addEventListener('click', updateAll);
+    document.getElementById('refreshBtn').addEventListener('click', () => updateAll(true));
     updateAll();
     setInterval(updateAll, 60 * 1000);
   </script>
